@@ -29,6 +29,7 @@
     noteErrors: {},
     unsavedPositions: new Set(),
     draggingNoteId: null,
+    hoveredNoteId: null,
     isFullScreenMode: false,
   };
 
@@ -512,6 +513,7 @@
   function renderCanvas() {
     elements.canvasContent.style.transform = `translate(${state.viewport.x}px, ${state.viewport.y}px) scale(${state.viewport.zoom})`;
     elements.canvasContent.innerHTML = "";
+    elements.canvasContent.append(createCanvasGridElement());
 
     if (!state.activeProject) {
       showEmptyState("No project selected", "Create or select a project to start arranging notes.");
@@ -519,8 +521,13 @@
     }
 
     if (state.activeNotes.length === 0) {
+      state.hoveredNoteId = null;
       showEmptyState("This project has no notes", "Use Add note to place the first card on the canvas.");
       return;
+    }
+
+    if (state.hoveredNoteId && !state.activeNotes.some((note) => note.id === state.hoveredNoteId)) {
+      state.hoveredNoteId = null;
     }
 
     elements.emptyState.hidden = true;
@@ -533,6 +540,12 @@
     elements.emptyState.hidden = false;
     elements.emptyState.querySelector("h3").textContent = title;
     elements.emptyState.querySelector("p").textContent = body;
+  }
+
+  function createCanvasGridElement() {
+    const grid = document.createElement("div");
+    grid.className = "canvas-grid";
+    return grid;
   }
 
   function createNoteElement(note) {
@@ -607,6 +620,14 @@
       card.append(errorNode);
     }
 
+    card.addEventListener("pointerenter", () => {
+      state.hoveredNoteId = note.id;
+    });
+    card.addEventListener("pointerleave", () => {
+      if (state.hoveredNoteId === note.id) {
+        state.hoveredNoteId = null;
+      }
+    });
     card.addEventListener("pointerdown", startNoteDrag);
     return card;
   }
@@ -654,6 +675,7 @@
     state.noteDrafts = {};
     state.noteErrors = {};
     state.unsavedPositions.clear();
+    state.hoveredNoteId = null;
     state.viewport = state.settings.canvasViewportByProject[projectId] || defaultViewport();
     state.settings.activeProjectId = projectId;
     await persistSettings();
@@ -772,6 +794,42 @@
     await selectProject(state.activeProject.id);
   }
 
+  function isTypingTarget(target) {
+    if (!target) {
+      return false;
+    }
+    const tagName = target.tagName ? target.tagName.toLowerCase() : "";
+    return target.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
+  }
+
+  function shouldIgnoreShortcut(event) {
+    return event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey || isTypingTarget(event.target);
+  }
+
+  function handleKeyboardShortcut(event) {
+    if (shouldIgnoreShortcut(event)) {
+      return;
+    }
+
+    const key = event.key.toLowerCase();
+    if (key === "n") {
+      if (!state.activeProject || state.hoveredNoteId) {
+        return;
+      }
+      event.preventDefault();
+      createNoteAtCenter();
+      return;
+    }
+
+    if (key === "d") {
+      if (!state.activeProject || !state.hoveredNoteId) {
+        return;
+      }
+      event.preventDefault();
+      deleteNote(state.hoveredNoteId);
+    }
+  }
+
   async function persistNotePosition(noteId, position) {
     state.unsavedPositions.add(noteId);
     render();
@@ -841,6 +899,9 @@
     elements.canvasSurface.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || event.target.closest(".note-card")) {
         return;
+      }
+      if (document.activeElement && isTypingTarget(document.activeElement)) {
+        document.activeElement.blur();
       }
       panStart = {
         pointerId: event.pointerId,
@@ -987,6 +1048,7 @@
       renderCanvas();
     });
 
+    document.addEventListener("keydown", handleKeyboardShortcut);
     elements.addNoteButton.addEventListener("click", createNoteAtCenter);
     elements.deleteProjectButton.addEventListener("click", deleteActiveProject);
     elements.fullscreenButton.addEventListener("pointerdown", (event) => {

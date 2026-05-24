@@ -236,11 +236,7 @@ button:focus-visible {
   overflow: hidden;
   cursor: grab;
   background-color: #f9edda;
-  background-image:
-    linear-gradient(rgba(31, 28, 23, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(31, 28, 23, 0.07) 1px, transparent 1px),
-    radial-gradient(circle at 70% 25%, rgba(211, 84, 0, 0.12), transparent 24rem);
-  background-size: 44px 44px, 44px 44px, auto;
+  background-image: radial-gradient(circle at 70% 25%, rgba(211, 84, 0, 0.12), transparent 24rem);
 }
 
 .canvas-surface.panning {
@@ -251,6 +247,20 @@ button:focus-visible {
   position: absolute;
   inset: 0;
   transform-origin: 0 0;
+}
+
+.canvas-grid {
+  position: absolute;
+  left: -100012px;
+  top: -100012px;
+  z-index: 0;
+  width: 200024px;
+  height: 200024px;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(31, 28, 23, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31, 28, 23, 0.07) 1px, transparent 1px);
+  background-size: 44px 44px;
 }
 
 .app-shell.fullscreen-mode .workspace {
@@ -379,6 +389,7 @@ button:focus-visible {
 
 .note-card {
   position: absolute;
+  z-index: 1;
   width: 260px;
   min-height: 210px;
   border: 1px solid rgba(25, 23, 20, 0.18);

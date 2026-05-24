@@ -1,0 +1,14 @@
+.git
+.gitignore
+Dockerfile
+HOWTO.md
+TESTING.md
+PROJECT.md
+AGENTS.md
+docs/
+internal/
+go.mod
+*.md
+*.log
+*.tar
+.DS_Store

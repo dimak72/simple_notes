@@ -16,7 +16,7 @@ Simple Notes is a static browser application with a small Go domain package for 
 - App Shell owns active project, notes, search, viewport, and error state.
 - Project Service creates, loads, lists, and deletes projects.
 - Note Service validates and mutates notes, and touches the parent project timestamp.
-- Search Service computes per-note search match state.
+- Search Service computes per-note text and `@tag` search match state.
 - Canvas Workspace handles pan, zoom, note dragging, recentering, and rendering.
 - Storage Repository wraps IndexedDB stores for projects, notes, and settings.
 

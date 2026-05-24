@@ -38,7 +38,7 @@ The primary user is an individual note taker who wants to capture short text not
 - User selects an existing note project from a list of locally saved projects.
 - User enters a name or other identifying information for a new note project.
 - User enters note text, ranging from a single word to several sentences, subject to a maximum note size.
-- User searches by entering text to match against notes in the selected project.
+- User searches by entering text or `@tag` tokens to match notes in the selected project.
 - User switches between canvas and list display modes when both modes are available.
 - User pans and zooms the canvas.
 - User drags notes to new positions on the canvas.
@@ -83,7 +83,7 @@ The primary user is an individual note taker who wants to capture short text not
 - Should the canvas view and list view both be required in the first version, or is one acceptable for the first release? Canvas view is required. List view is optional
 - What note fields are required beyond text, such as title, creation time, update time, color, or tags? all of the above except for title
 - What project fields are required beyond the project name? date created and date updated
-- Should search match only note text, or also project names and future metadata? note text for v1
+- Should search match only note text, or also project names and future metadata? note text and note tags for v1
 - Should search be case-insensitive, partial-match, or support more advanced query behavior? case-insensitive and partial match for v1
 - What browser storage mechanism should be preferred for the first version: localStorage, IndexedDB, or another local persistence option? Recommed the best option
 - Should a lightweight Go server be part of the initial deliverable, or should the first version remain static-only? let's keep it static only for v1

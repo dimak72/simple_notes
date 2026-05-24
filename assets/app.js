@@ -96,6 +96,38 @@
     return normalized;
   }
 
+  function normalizeSearchTag(tag) {
+    return String(tag).trim().replace(/^@+/, "").replace(/,+$/, "").toLowerCase();
+  }
+
+  function parseSearchQuery(query) {
+    const textParts = [];
+    const tags = [];
+    const seenTags = new Set();
+
+    for (const token of query.trim().split(/\s+/)) {
+      if (!token) {
+        continue;
+      }
+
+      if (token.startsWith("@") && token.length > 1) {
+        const tag = normalizeSearchTag(token);
+        if (tag && !seenTags.has(tag)) {
+          seenTags.add(tag);
+          tags.push(tag);
+        }
+        continue;
+      }
+
+      textParts.push(token);
+    }
+
+    return {
+      text: textParts.join(" ").toLowerCase(),
+      tags,
+    };
+  }
+
   function validateProjectName(name) {
     if (!name.trim()) {
       return fail("project_name_required", "Project name is required.", "name");
@@ -428,11 +460,16 @@
 
   const SearchService = {
     matchState(note, query) {
-      const normalized = query.trim().toLowerCase();
-      if (!normalized) {
+      const search = parseSearchQuery(query);
+      if (!search.text && search.tags.length === 0) {
         return "none";
       }
-      return note.text.toLowerCase().includes(normalized) ? "match" : "non_match";
+
+      const textMatches = !search.text || note.text.toLowerCase().includes(search.text);
+      const noteTags = new Set((note.tags || []).map(normalizeSearchTag).filter(Boolean));
+      const tagsMatch = search.tags.every((tag) => noteTags.has(tag));
+
+      return textMatches && tagsMatch ? "match" : "non_match";
     },
   };
 

@@ -243,6 +243,10 @@ button:focus-visible {
   cursor: grabbing;
 }
 
+.canvas-surface.selecting {
+  cursor: crosshair;
+}
+
 .canvas-content {
   position: absolute;
   inset: 0;
@@ -401,13 +405,29 @@ button:focus-visible {
 }
 
 .note-card.dragging {
+  z-index: 3;
   cursor: grabbing;
   box-shadow: 0 28px 54px rgba(35, 28, 20, 0.28);
+}
+
+.note-card.selected {
+  z-index: 2;
+  outline: 3px solid rgba(21, 101, 192, 0.8);
+  outline-offset: 4px;
 }
 
 .note-card.non-match {
   opacity: 0.18;
   filter: saturate(0.55);
+}
+
+.note-selection-box {
+  position: absolute;
+  z-index: 4;
+  border: 1px solid rgba(21, 101, 192, 0.9);
+  border-radius: 6px;
+  background: rgba(21, 101, 192, 0.12);
+  pointer-events: none;
 }
 
 .note-card textarea {

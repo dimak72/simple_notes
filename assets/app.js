@@ -10,6 +10,8 @@
   const CANVAS_DEFAULT_ZOOM = 1;
   const PINCH_ZOOM_SENSITIVITY = 0.002;
   const MAX_WHEEL_ZOOM_STEP = 1.12;
+  const NOTE_CARD_WORLD_WIDTH = 260;
+  const NOTE_CARD_WORLD_HEIGHT = 220;
   const DEFAULT_NOTE_COLOR = "#fff7cc";
   const NOTE_COLOR_PALETTE = ["#fff7cc", "#ffd6d6", "#d6ecff", "#dcfce7", "#f3e8ff", "#f5f5f4"];
 
@@ -28,6 +30,7 @@
     noteDrafts: {},
     noteErrors: {},
     unsavedPositions: new Set(),
+    selectedNoteIds: new Set(),
     draggingNoteId: null,
     hoveredNoteId: null,
     isFullScreenMode: false,
@@ -497,8 +500,10 @@
   function renderHeader() {
     const hasProject = Boolean(state.activeProject);
     elements.activeProjectName.textContent = hasProject ? state.activeProject.name : "Pick or create a project";
+    const selectedCount = state.selectedNoteIds.size;
+    const selectedMeta = selectedCount > 0 ? ` · ${selectedCount} selected` : "";
     elements.activeProjectMeta.textContent = hasProject
-      ? `${state.activeNotes.length} note${state.activeNotes.length === 1 ? "" : "s"} · Updated ${formatDate(state.activeProject.updatedAt)}`
+      ? `${state.activeNotes.length} note${state.activeNotes.length === 1 ? "" : "s"}${selectedMeta} · Updated ${formatDate(state.activeProject.updatedAt)}`
       : "No project selected";
 
     elements.searchInput.disabled = !hasProject;
@@ -529,6 +534,7 @@
     if (state.hoveredNoteId && !state.activeNotes.some((note) => note.id === state.hoveredNoteId)) {
       state.hoveredNoteId = null;
     }
+    syncSelectedNotes();
 
     elements.emptyState.hidden = true;
     for (const note of state.activeNotes) {
@@ -550,9 +556,11 @@
 
   function createNoteElement(note) {
     const matchState = SearchService.matchState(note, state.searchQuery);
+    const isSelected = state.selectedNoteIds.has(note.id);
     const card = document.createElement("article");
-    card.className = `note-card${matchState === "non_match" ? " non-match" : ""}${state.draggingNoteId === note.id ? " dragging" : ""}`;
+    card.className = `note-card${matchState === "non_match" ? " non-match" : ""}${isSelected ? " selected" : ""}${state.draggingNoteId === note.id ? " dragging" : ""}`;
     card.dataset.noteId = note.id;
+    card.setAttribute("aria-selected", String(isSelected));
     card.style.left = `${note.position.x}px`;
     card.style.top = `${note.position.y}px`;
     card.style.background = note.color;
@@ -662,19 +670,22 @@
     }, 220);
   }
 
-  async function selectProject(projectId) {
+  async function selectProject(projectId, options = {}) {
     clearError();
     const loaded = await projectService.loadProject(projectId);
     if (!loaded.ok) {
       setError(loaded.error);
       return;
     }
+    const preservedSelection = options.preserveSelection ? new Set(state.selectedNoteIds) : new Set();
     state.activeProject = loaded.value.project;
     state.activeNotes = loaded.value.notes;
     state.searchQuery = "";
     state.noteDrafts = {};
     state.noteErrors = {};
     state.unsavedPositions.clear();
+    state.selectedNoteIds = preservedSelection;
+    syncSelectedNotes();
     state.hoveredNoteId = null;
     state.viewport = state.settings.canvasViewportByProject[projectId] || defaultViewport();
     state.settings.activeProjectId = projectId;
@@ -715,6 +726,7 @@
     state.activeProject = null;
     state.activeNotes = [];
     state.searchQuery = "";
+    state.selectedNoteIds.clear();
     state.viewport = defaultViewport();
     await persistSettings();
     await refreshProjects();
@@ -830,16 +842,70 @@
     }
   }
 
-  async function persistNotePosition(noteId, position) {
-    state.unsavedPositions.add(noteId);
-    render();
-    const updated = await noteService.updateNotePosition({ noteId, position });
-    if (!updated.ok) {
-      setError(updated.error);
+  function syncSelectedNotes() {
+    for (const noteId of state.selectedNoteIds) {
+      if (!state.activeNotes.some((note) => note.id === noteId)) {
+        state.selectedNoteIds.delete(noteId);
+      }
+    }
+  }
+
+  function updateSelectedNoteClasses() {
+    for (const note of state.activeNotes) {
+      const card = findNoteCard(note.id);
+      if (!card) {
+        continue;
+      }
+      const isSelected = state.selectedNoteIds.has(note.id);
+      card.classList.toggle("selected", isSelected);
+      card.setAttribute("aria-selected", String(isSelected));
+    }
+    renderHeader();
+  }
+
+  function findNoteCard(noteId) {
+    for (const card of elements.canvasContent.querySelectorAll(".note-card")) {
+      if (card.dataset.noteId === noteId) {
+        return card;
+      }
+    }
+    return null;
+  }
+
+  function selectOnlyNote(noteId) {
+    state.selectedNoteIds.clear();
+    state.selectedNoteIds.add(noteId);
+    updateSelectedNoteClasses();
+  }
+
+  function clearNoteSelection() {
+    if (state.selectedNoteIds.size === 0) {
       return;
     }
-    state.unsavedPositions.delete(noteId);
-    await selectProject(updated.value.projectId);
+    state.selectedNoteIds.clear();
+    updateSelectedNoteClasses();
+  }
+
+  async function persistNotePositions(positions) {
+    for (const item of positions) {
+      state.unsavedPositions.add(item.noteId);
+    }
+    render();
+
+    let projectId = state.activeProject ? state.activeProject.id : null;
+    for (const item of positions) {
+      const updated = await noteService.updateNotePosition({ noteId: item.noteId, position: item.position });
+      if (!updated.ok) {
+        setError(updated.error);
+        return;
+      }
+      projectId = updated.value.projectId;
+      state.unsavedPositions.delete(item.noteId);
+    }
+
+    if (projectId) {
+      await selectProject(projectId, { preserveSelection: true });
+    }
   }
 
   function screenToWorld(clientX, clientY) {
@@ -860,36 +926,79 @@
     if (!note) {
       return;
     }
+    if (event.shiftKey) {
+      startNoteSelectionDrag(event);
+      return;
+    }
+
+    if (!state.selectedNoteIds.has(noteId)) {
+      selectOnlyNote(noteId);
+    }
 
     event.preventDefault();
     event.stopPropagation();
-    card.setPointerCapture(event.pointerId);
+    const pointerId = event.pointerId;
+    card.setPointerCapture(pointerId);
     state.draggingNoteId = noteId;
-    const world = screenToWorld(event.clientX, event.clientY);
-    const offset = { x: world.x - note.position.x, y: world.y - note.position.y };
+    card.classList.add("dragging");
+    const draggedNotes = state.activeNotes.filter((item) => state.selectedNoteIds.has(item.id));
+    const notePositions = new Map(draggedNotes.map((item) => [item.id, { ...item.position }]));
+    const noteCards = new Map(draggedNotes.map((item) => [item.id, findNoteCard(item.id)]));
+    const startWorld = screenToWorld(event.clientX, event.clientY);
+    let moved = false;
 
     const move = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) {
+        return;
+      }
       const nextWorld = screenToWorld(moveEvent.clientX, moveEvent.clientY);
-      note.position = {
-        x: Math.round(nextWorld.x - offset.x),
-        y: Math.round(nextWorld.y - offset.y),
+      const delta = {
+        x: nextWorld.x - startWorld.x,
+        y: nextWorld.y - startWorld.y,
       };
-      card.style.left = `${note.position.x}px`;
-      card.style.top = `${note.position.y}px`;
+      for (const draggedNote of draggedNotes) {
+        const initial = notePositions.get(draggedNote.id);
+        const nextPosition = {
+          x: Math.round(initial.x + delta.x),
+          y: Math.round(initial.y + delta.y),
+        };
+        moved = moved || nextPosition.x !== initial.x || nextPosition.y !== initial.y;
+        draggedNote.position = nextPosition;
+        const draggedCard = noteCards.get(draggedNote.id);
+        if (draggedCard) {
+          draggedCard.style.left = `${nextPosition.x}px`;
+          draggedCard.style.top = `${nextPosition.y}px`;
+        }
+      }
     };
 
-    const end = () => {
-      card.releasePointerCapture(event.pointerId);
+    const end = (endEvent) => {
+      if (endEvent.pointerId !== pointerId) {
+        return;
+      }
+      if (card.hasPointerCapture(pointerId)) {
+        card.releasePointerCapture(pointerId);
+      }
       card.removeEventListener("pointermove", move);
       card.removeEventListener("pointerup", end);
       card.removeEventListener("pointercancel", end);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
       state.draggingNoteId = null;
-      persistNotePosition(noteId, { ...note.position });
+      card.classList.remove("dragging");
+      if (!moved) {
+        return;
+      }
+      persistNotePositions(draggedNotes.map((draggedNote) => ({ noteId: draggedNote.id, position: { ...draggedNote.position } })));
     };
 
     card.addEventListener("pointermove", move);
     card.addEventListener("pointerup", end);
     card.addEventListener("pointercancel", end);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
   }
 
   function setupCanvasPanAndZoom() {
@@ -903,6 +1012,11 @@
       if (document.activeElement && isTypingTarget(document.activeElement)) {
         document.activeElement.blur();
       }
+      if (event.shiftKey && state.activeProject) {
+        startNoteSelectionDrag(event);
+        return;
+      }
+      clearNoteSelection();
       panStart = {
         pointerId: event.pointerId,
         x: event.clientX,
@@ -976,6 +1090,106 @@
     });
   }
 
+  function startNoteSelectionDrag(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const surfaceRect = elements.canvasSurface.getBoundingClientRect();
+    const startPoint = {
+      x: event.clientX - surfaceRect.left,
+      y: event.clientY - surfaceRect.top,
+    };
+    const baseSelected = new Set(state.selectedNoteIds);
+    const selectionBox = document.createElement("div");
+    selectionBox.className = "note-selection-box";
+    elements.canvasSurface.append(selectionBox);
+    elements.canvasSurface.classList.add("selecting");
+    const pointerId = event.pointerId;
+    elements.canvasSurface.setPointerCapture(pointerId);
+
+    const updateSelection = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) {
+        return;
+      }
+      const currentPoint = {
+        x: moveEvent.clientX - surfaceRect.left,
+        y: moveEvent.clientY - surfaceRect.top,
+      };
+      const screenRect = normalizeRect(startPoint, currentPoint);
+      selectionBox.style.left = `${screenRect.x}px`;
+      selectionBox.style.top = `${screenRect.y}px`;
+      selectionBox.style.width = `${screenRect.width}px`;
+      selectionBox.style.height = `${screenRect.height}px`;
+
+      const worldRect = normalizeWorldRect(
+        screenToWorld(surfaceRect.left + screenRect.x, surfaceRect.top + screenRect.y),
+        screenToWorld(surfaceRect.left + screenRect.x + screenRect.width, surfaceRect.top + screenRect.y + screenRect.height),
+      );
+      state.selectedNoteIds = new Set(baseSelected);
+      for (const note of state.activeNotes) {
+        if (noteIntersectsWorldRect(note, worldRect)) {
+          state.selectedNoteIds.add(note.id);
+        }
+      }
+      updateSelectedNoteClasses();
+    };
+
+    const endSelection = (endEvent) => {
+      if (endEvent.pointerId !== pointerId) {
+        return;
+      }
+      if (elements.canvasSurface.hasPointerCapture(pointerId)) {
+        elements.canvasSurface.releasePointerCapture(pointerId);
+      }
+      elements.canvasSurface.classList.remove("selecting");
+      selectionBox.remove();
+      elements.canvasSurface.removeEventListener("pointermove", updateSelection);
+      elements.canvasSurface.removeEventListener("pointerup", endSelection);
+      elements.canvasSurface.removeEventListener("pointercancel", endSelection);
+      window.removeEventListener("pointermove", updateSelection);
+      window.removeEventListener("pointerup", endSelection);
+      window.removeEventListener("pointercancel", endSelection);
+    };
+
+    updateSelection(event);
+    elements.canvasSurface.addEventListener("pointermove", updateSelection);
+    elements.canvasSurface.addEventListener("pointerup", endSelection);
+    elements.canvasSurface.addEventListener("pointercancel", endSelection);
+    window.addEventListener("pointermove", updateSelection);
+    window.addEventListener("pointerup", endSelection);
+    window.addEventListener("pointercancel", endSelection);
+  }
+
+  function normalizeRect(startPoint, currentPoint) {
+    const x = Math.min(startPoint.x, currentPoint.x);
+    const y = Math.min(startPoint.y, currentPoint.y);
+    return {
+      x,
+      y,
+      width: Math.abs(currentPoint.x - startPoint.x),
+      height: Math.abs(currentPoint.y - startPoint.y),
+    };
+  }
+
+  function normalizeWorldRect(startWorld, endWorld) {
+    const x = Math.min(startWorld.x, endWorld.x);
+    const y = Math.min(startWorld.y, endWorld.y);
+    return {
+      x,
+      y,
+      width: Math.abs(endWorld.x - startWorld.x),
+      height: Math.abs(endWorld.y - startWorld.y),
+    };
+  }
+
+  function noteIntersectsWorldRect(note, rect) {
+    const noteRight = note.position.x + NOTE_CARD_WORLD_WIDTH;
+    const noteBottom = note.position.y + NOTE_CARD_WORLD_HEIGHT;
+    const rectRight = rect.x + rect.width;
+    const rectBottom = rect.y + rect.height;
+    return note.position.x <= rectRight && noteRight >= rect.x && note.position.y <= rectBottom && noteBottom >= rect.y;
+  }
+
   function wheelZoomMultiplier(deltaY) {
     const rawMultiplier = Math.exp(-deltaY * PINCH_ZOOM_SENSITIVITY);
     return clamp(rawMultiplier, 1 / MAX_WHEEL_ZOOM_STEP, MAX_WHEEL_ZOOM_STEP);
@@ -1022,8 +1236,8 @@
       const padding = 120;
       const minX = Math.min(...state.activeNotes.map((note) => note.position.x));
       const minY = Math.min(...state.activeNotes.map((note) => note.position.y));
-      const maxX = Math.max(...state.activeNotes.map((note) => note.position.x + 260));
-      const maxY = Math.max(...state.activeNotes.map((note) => note.position.y + 220));
+      const maxX = Math.max(...state.activeNotes.map((note) => note.position.x + NOTE_CARD_WORLD_WIDTH));
+      const maxY = Math.max(...state.activeNotes.map((note) => note.position.y + NOTE_CARD_WORLD_HEIGHT));
       const width = Math.max(1, maxX - minX + padding * 2);
       const height = Math.max(1, maxY - minY + padding * 2);
       const zoom = clamp(Math.min(rect.width / width, rect.height / height), CANVAS_MIN_ZOOM, CANVAS_MAX_ZOOM);

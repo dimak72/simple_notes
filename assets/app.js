@@ -10,8 +10,10 @@
   const CANVAS_DEFAULT_ZOOM = 1;
   const PINCH_ZOOM_SENSITIVITY = 0.002;
   const MAX_WHEEL_ZOOM_STEP = 1.12;
-  const NOTE_CARD_WORLD_WIDTH = 260;
-  const NOTE_CARD_WORLD_HEIGHT = 220;
+  const NOTE_CARD_DEFAULT_WIDTH = 260;
+  const NOTE_CARD_DEFAULT_HEIGHT = 220;
+  const NOTE_CARD_MIN_WIDTH = 220;
+  const NOTE_CARD_MIN_HEIGHT = 180;
   const DEFAULT_NOTE_COLOR = "#fff7cc";
   const NOTE_COLOR_PALETTE = ["#fff7cc", "#ffd6d6", "#d6ecff", "#dcfce7", "#f3e8ff", "#f5f5f4"];
 
@@ -72,6 +74,23 @@
 
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
+  }
+
+  function defaultNoteSize() {
+    return { width: NOTE_CARD_DEFAULT_WIDTH, height: NOTE_CARD_DEFAULT_HEIGHT };
+  }
+
+  function normalizeNoteSize(size) {
+    const width = Number(size && size.width);
+    const height = Number(size && size.height);
+    return {
+      width: Math.max(NOTE_CARD_MIN_WIDTH, Number.isFinite(width) ? Math.round(width) : NOTE_CARD_DEFAULT_WIDTH),
+      height: Math.max(NOTE_CARD_MIN_HEIGHT, Number.isFinite(height) ? Math.round(height) : NOTE_CARD_DEFAULT_HEIGHT),
+    };
+  }
+
+  function noteSize(note) {
+    return normalizeNoteSize(note ? note.size : null);
   }
 
   function formatDate(value) {
@@ -392,6 +411,7 @@
         color: validateNoteColor(input.color || DEFAULT_NOTE_COLOR),
         tags: normalizeTags(input.tags || []),
         position: input.position,
+        size: normalizeNoteSize(input.size || defaultNoteSize()),
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -413,6 +433,10 @@
 
     async updateNotePosition(input) {
       return this.updateNote(input.noteId, (note, timestamp) => ({ ...note, position: input.position, updatedAt: timestamp }));
+    }
+
+    async updateNoteSize(input) {
+      return this.updateNote(input.noteId, (note, timestamp) => ({ ...note, size: normalizeNoteSize(input.size), updatedAt: timestamp }));
     }
 
     async updateNoteMetadata(input) {
@@ -601,6 +625,9 @@
     card.style.left = `${note.position.x}px`;
     card.style.top = `${note.position.y}px`;
     card.style.background = note.color;
+    const size = noteSize(note);
+    card.style.width = `${size.width}px`;
+    card.style.minHeight = `${size.height}px`;
 
     const textValue = Object.prototype.hasOwnProperty.call(state.noteDrafts, note.id) ? state.noteDrafts[note.id] : note.text;
     const error = state.noteErrors[note.id];
@@ -657,7 +684,18 @@
     footer.innerHTML = `<span data-counter>${textValue.length}/${NOTE_TEXT_MAX_LENGTH}</span><span></span>`;
     footer.querySelector("span:last-child").textContent = unsaved ? "Position unsaved" : `Updated ${formatDate(note.updatedAt)}`;
 
-    card.append(tools, textarea, tags, footer);
+    const resizeHandle = document.createElement("button");
+    resizeHandle.type = "button";
+    resizeHandle.className = "note-resize-handle";
+    resizeHandle.title = "Resize note";
+    resizeHandle.setAttribute("aria-label", "Resize note");
+    resizeHandle.addEventListener("pointerdown", startNoteResize);
+    resizeHandle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    card.append(tools, textarea, tags, footer, resizeHandle);
     if (error) {
       const errorNode = document.createElement("div");
       errorNode.className = "inline-error";
@@ -789,6 +827,7 @@
       color: DEFAULT_NOTE_COLOR,
       tags: [],
       position: viewportCenterPosition(),
+      size: defaultNoteSize(),
     });
     if (!created.ok) {
       setError(created.error);
@@ -827,6 +866,101 @@
       return;
     }
     await selectProject(updated.value.projectId);
+  }
+
+  async function persistNoteSizes(sizes) {
+    if (sizes.length === 0) {
+      return;
+    }
+
+    clearError();
+    let projectId = state.activeProject ? state.activeProject.id : null;
+    for (const item of sizes) {
+      const updated = await noteService.updateNoteSize({ noteId: item.noteId, size: item.size });
+      if (!updated.ok) {
+        setError(updated.error);
+        return;
+      }
+      projectId = updated.value.projectId;
+    }
+
+    if (projectId) {
+      await selectProject(projectId, { preserveSelection: true });
+    }
+  }
+
+  async function fitNotesToContent() {
+    if (!state.activeProject) {
+      return;
+    }
+
+    const targetIds = state.selectedNoteIds.size > 0 ? Array.from(state.selectedNoteIds) : state.hoveredNoteId ? [state.hoveredNoteId] : [];
+    const updates = [];
+    for (const noteId of targetIds) {
+      const note = state.activeNotes.find((item) => item.id === noteId);
+      const card = findNoteCard(noteId);
+      if (!note || !card) {
+        continue;
+      }
+
+      const currentSize = noteSize(note);
+      const nextSize = measureNoteContentSize(card, currentSize);
+      if (nextSize.width !== currentSize.width || nextSize.height !== currentSize.height) {
+        note.size = nextSize;
+        card.style.width = `${nextSize.width}px`;
+        card.style.minHeight = `${nextSize.height}px`;
+        updates.push({ noteId, size: nextSize });
+      }
+    }
+
+    await persistNoteSizes(updates);
+  }
+
+  function measureNoteContentSize(card, currentSize) {
+    const textarea = card.querySelector("textarea");
+    const fields = [textarea, card.querySelector(".tags-input")].filter(Boolean);
+    const previousMinHeight = card.style.minHeight;
+    const previousTextareaHeight = textarea ? textarea.style.height : "";
+    const previousTextareaFlex = textarea ? textarea.style.flex : "";
+
+    card.style.minHeight = `${NOTE_CARD_MIN_HEIGHT}px`;
+
+    if (textarea) {
+      textarea.style.flex = "0 0 auto";
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+
+    let width = currentSize.width;
+    for (const field of fields) {
+      const overflowWidth = field.scrollWidth - field.clientWidth;
+      if (overflowWidth > 0) {
+        width += Math.ceil(overflowWidth);
+      }
+    }
+
+    let contentBottom = 0;
+    const cardStyle = getComputedStyle(card);
+    const paddingBottom = parseFloat(cardStyle.paddingBottom) || 0;
+    for (const child of Array.from(card.children)) {
+      if (child.classList.contains("note-resize-handle")) {
+        continue;
+      }
+      const childStyle = getComputedStyle(child);
+      const marginBottom = parseFloat(childStyle.marginBottom) || 0;
+      contentBottom = Math.max(contentBottom, child.offsetTop + child.offsetHeight + marginBottom);
+    }
+
+    if (textarea) {
+      textarea.style.height = previousTextareaHeight;
+      textarea.style.flex = previousTextareaFlex;
+    }
+    card.style.minHeight = previousMinHeight;
+
+    return normalizeNoteSize({
+      width,
+      height: Math.ceil(contentBottom + paddingBottom),
+    });
   }
 
   async function deleteNote(noteId) {
@@ -876,6 +1010,15 @@
       }
       event.preventDefault();
       deleteNote(state.hoveredNoteId);
+      return;
+    }
+
+    if (key === "f") {
+      if (!state.activeProject || (state.selectedNoteIds.size === 0 && !state.hoveredNoteId)) {
+        return;
+      }
+      event.preventDefault();
+      fitNotesToContent();
     }
   }
 
@@ -953,8 +1096,77 @@
     };
   }
 
+  function startNoteResize(event) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const handle = event.currentTarget;
+    const card = handle.closest(".note-card");
+    const noteId = card ? card.dataset.noteId : null;
+    const note = state.activeNotes.find((item) => item.id === noteId);
+    if (!card || !note) {
+      return;
+    }
+
+    if (!state.selectedNoteIds.has(noteId)) {
+      selectOnlyNote(noteId);
+    }
+
+    const pointerId = event.pointerId;
+    handle.setPointerCapture(pointerId);
+    card.classList.add("resizing");
+    const initialSize = noteSize(note);
+    const startWorld = screenToWorld(event.clientX, event.clientY);
+    let nextSize = initialSize;
+    let changed = false;
+
+    const move = (moveEvent) => {
+      if (moveEvent.pointerId !== pointerId) {
+        return;
+      }
+      const currentWorld = screenToWorld(moveEvent.clientX, moveEvent.clientY);
+      nextSize = normalizeNoteSize({
+        width: initialSize.width + currentWorld.x - startWorld.x,
+        height: initialSize.height + currentWorld.y - startWorld.y,
+      });
+      changed = changed || nextSize.width !== initialSize.width || nextSize.height !== initialSize.height;
+      note.size = nextSize;
+      card.style.width = `${nextSize.width}px`;
+      card.style.minHeight = `${nextSize.height}px`;
+    };
+
+    const end = (endEvent) => {
+      if (endEvent.pointerId !== pointerId) {
+        return;
+      }
+      if (handle.hasPointerCapture(pointerId)) {
+        handle.releasePointerCapture(pointerId);
+      }
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      card.classList.remove("resizing");
+      if (changed) {
+        persistNoteSizes([{ noteId, size: nextSize }]);
+      }
+    };
+
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  }
+
   function startNoteDrag(event) {
-    if (event.button !== 0 || event.target.closest("textarea, input, button")) {
+    if (event.button !== 0 || event.target.closest("textarea, input, button, .note-resize-handle")) {
       return;
     }
     const card = event.currentTarget;
@@ -1220,8 +1432,9 @@
   }
 
   function noteIntersectsWorldRect(note, rect) {
-    const noteRight = note.position.x + NOTE_CARD_WORLD_WIDTH;
-    const noteBottom = note.position.y + NOTE_CARD_WORLD_HEIGHT;
+    const size = noteSize(note);
+    const noteRight = note.position.x + size.width;
+    const noteBottom = note.position.y + size.height;
     const rectRight = rect.x + rect.width;
     const rectBottom = rect.y + rect.height;
     return note.position.x <= rectRight && noteRight >= rect.x && note.position.y <= rectBottom && noteBottom >= rect.y;
@@ -1273,8 +1486,8 @@
       const padding = 120;
       const minX = Math.min(...state.activeNotes.map((note) => note.position.x));
       const minY = Math.min(...state.activeNotes.map((note) => note.position.y));
-      const maxX = Math.max(...state.activeNotes.map((note) => note.position.x + NOTE_CARD_WORLD_WIDTH));
-      const maxY = Math.max(...state.activeNotes.map((note) => note.position.y + NOTE_CARD_WORLD_HEIGHT));
+      const maxX = Math.max(...state.activeNotes.map((note) => note.position.x + noteSize(note).width));
+      const maxY = Math.max(...state.activeNotes.map((note) => note.position.y + noteSize(note).height));
       const width = Math.max(1, maxX - minX + padding * 2);
       const height = Math.max(1, maxY - minY + padding * 2);
       const zoom = clamp(Math.min(rect.width / width, rect.height / height), CANVAS_MIN_ZOOM, CANVAS_MAX_ZOOM);

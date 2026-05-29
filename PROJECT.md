@@ -12,7 +12,7 @@ Implemented v1 capabilities:
 - Persist project name, creation time, update time, and the last active project.
 - Create, edit, move, select, and delete notes inside the active project.
 - Enforce a 1,024-character maximum note length and reject empty or whitespace-only note text.
-- Persist note text, color, tags, position, creation time, and update time.
+- Persist note text, color, tags, position, size, creation time, and update time.
 - Arrange notes on a zoomable and pannable canvas.
 - Persist the canvas viewport per project.
 - Recenter the canvas around existing notes.
@@ -21,6 +21,7 @@ Implemented v1 capabilities:
 - Edit note tags as comma-separated values and deduplicate tags case-insensitively.
 - Choose note colors from a fixed palette.
 - Select multiple notes with shift-drag and move selected notes together.
+- Resize note cards manually and auto-fit selected or hovered cards to their content with the `f` shortcut.
 
 Not implemented in v1:
 
@@ -71,6 +72,7 @@ The primary user is an individual note taker who wants to capture short text not
 - User pans and zooms the canvas.
 - User recenters the canvas or enters canvas-focused full screen mode.
 - User drags notes to new positions on the canvas.
+- User resizes note cards or auto-fits note cards to their content.
 - User shift-drags to select multiple notes.
 
 ## Outputs
@@ -78,7 +80,7 @@ The primary user is an individual note taker who wants to capture short text not
 - The application displays the list of locally saved note projects.
 - The application displays the currently selected note project.
 - The application displays notes in a movable canvas view.
-- The application persists note projects, note contents, note metadata, canvas note positions, and per-project canvas viewport in IndexedDB.
+- The application persists note projects, note contents, note metadata, canvas note positions, note card sizes, and per-project canvas viewport in IndexedDB.
 - The application visually distinguishes search matches from non-matching notes for the active project.
 - The application prevents or reports note text that exceeds the configured maximum size.
 - The application preserves locally stored note data across page reloads within the same browser storage context.

@@ -395,7 +395,9 @@ button:focus-visible {
   position: absolute;
   z-index: 1;
   width: 260px;
-  min-height: 210px;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
   border: 1px solid rgba(25, 23, 20, 0.18);
   border-radius: 20px;
   padding: 0.9rem;
@@ -407,6 +409,12 @@ button:focus-visible {
 .note-card.dragging {
   z-index: 3;
   cursor: grabbing;
+  box-shadow: 0 28px 54px rgba(35, 28, 20, 0.28);
+}
+
+.note-card.resizing {
+  z-index: 3;
+  cursor: nwse-resize;
   box-shadow: 0 28px 54px rgba(35, 28, 20, 0.28);
 }
 
@@ -433,7 +441,8 @@ button:focus-visible {
 .note-card textarea {
   width: 100%;
   min-height: 104px;
-  resize: vertical;
+  flex: 1 1 auto;
+  resize: none;
   border: 0;
   padding: 0;
   background: transparent;
@@ -442,6 +451,27 @@ button:focus-visible {
 
 .note-card textarea:focus {
   outline: 0;
+}
+
+.note-resize-handle {
+  position: absolute;
+  right: 0.3rem;
+  bottom: 0.3rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border-radius: 6px;
+  background:
+    linear-gradient(135deg, transparent 0 45%, rgba(25, 23, 20, 0.55) 46% 54%, transparent 55%),
+    linear-gradient(135deg, transparent 0 64%, rgba(25, 23, 20, 0.34) 65% 73%, transparent 74%);
+  cursor: nwse-resize;
+  opacity: 0.5;
+}
+
+button.note-resize-handle:hover,
+button.note-resize-handle:focus-visible {
+  opacity: 0.9;
+  transform: none;
 }
 
 .note-tools {

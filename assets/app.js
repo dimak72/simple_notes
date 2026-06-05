@@ -36,6 +36,9 @@
     draggingNoteId: null,
     hoveredNoteId: null,
     isFullScreenMode: false,
+    editingProjectId: null,
+    editingProjectName: "",
+    confirmingProjectDeleteId: null,
   };
 
   const elements = {
@@ -49,7 +52,6 @@
     searchInput: document.querySelector("#searchInput"),
     addNoteButton: document.querySelector("#addNoteButton"),
     recenterButton: document.querySelector("#recenterButton"),
-    deleteProjectButton: document.querySelector("#deleteProjectButton"),
     zoomInButton: document.querySelector("#zoomInButton"),
     zoomOutButton: document.querySelector("#zoomOutButton"),
     statusBanner: document.querySelector("#statusBanner"),
@@ -375,6 +377,25 @@
       return ok({ project: project.value, notes: notes.value });
     }
 
+    async renameProject(projectId, name) {
+      const validated = validateProjectName(name);
+      if (!validated.ok) {
+        return validated;
+      }
+
+      const found = await this.storage.getProject(projectId);
+      if (!found.ok || !found.value) {
+        return found.ok ? fail("not_found", "Project was not found.") : found;
+      }
+      if (found.value.name === validated.value) {
+        return ok(found.value);
+      }
+
+      const renamed = { ...found.value, name: validated.value, updatedAt: nowISO() };
+      const saved = await this.storage.saveProject(renamed);
+      return saved.ok ? ok(renamed) : saved;
+    }
+
     async deleteProject(projectId) {
       const notesDeleted = await this.storage.deleteNotesForProject(projectId);
       if (!notesDeleted.ok) {
@@ -546,15 +567,99 @@
     }
 
     for (const project of state.projects) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `project-item${state.activeProject && state.activeProject.id === project.id ? " active" : ""}`;
-      button.dataset.projectId = project.id;
-      button.innerHTML = `<strong></strong><span class="meta-line"></span>`;
-      button.querySelector("strong").textContent = project.name;
-      button.querySelector("span").textContent = `Updated ${formatDate(project.updatedAt)}`;
-      button.addEventListener("click", () => selectProject(project.id));
-      elements.projectList.append(button);
+      const item = document.createElement("div");
+      item.className = `project-item${state.activeProject && state.activeProject.id === project.id ? " active" : ""}`;
+      item.dataset.projectId = project.id;
+      if (state.confirmingProjectDeleteId === project.id) {
+        item.innerHTML = `
+          <div class="project-delete-confirmation">
+            <div>
+              <strong>Delete project?</strong>
+              <span class="meta-line">Includes all notes</span>
+            </div>
+            <div class="project-action-rail" role="group">
+              <button class="project-action-button confirm-project-delete-button" type="button" title="Confirm delete">
+                <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                  <path d="m5 12 4 4L19 6"></path>
+                </svg>
+              </button>
+              <button class="project-action-button cancel-project-delete-button" type="button" title="Cancel delete">
+                <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                  <path d="M6 6l12 12M18 6 6 18"></path>
+                </svg>
+              </button>
+            </div>
+          </div>`;
+        item.querySelector(".project-action-rail").setAttribute("aria-label", `Delete actions for ${project.name}`);
+        item.querySelector(".confirm-project-delete-button").setAttribute("aria-label", `Confirm delete ${project.name}`);
+        item.querySelector(".cancel-project-delete-button").setAttribute("aria-label", `Cancel deleting ${project.name}`);
+        item.querySelector(".confirm-project-delete-button").addEventListener("click", () => deleteProject(project));
+        item.querySelector(".cancel-project-delete-button").addEventListener("click", cancelProjectDelete);
+      } else if (state.editingProjectId === project.id) {
+        item.innerHTML = `
+          <form class="project-rename-form">
+            <input class="project-rename-input" type="text" autocomplete="off" />
+            <div class="project-action-rail" role="group">
+              <button class="project-action-button save-project-name-button" type="submit" title="Save project name">
+                <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                  <path d="m5 12 4 4L19 6"></path>
+                </svg>
+              </button>
+              <button class="project-action-button cancel-project-rename-button" type="button" title="Cancel rename">
+                <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                  <path d="M6 6l12 12M18 6 6 18"></path>
+                </svg>
+              </button>
+            </div>
+          </form>`;
+        const input = item.querySelector(".project-rename-input");
+        input.value = state.editingProjectName;
+        input.setAttribute("aria-label", `Project name for ${project.name}`);
+        input.addEventListener("input", () => {
+          state.editingProjectName = input.value;
+        });
+        item.querySelector(".project-action-rail").setAttribute("aria-label", `Rename actions for ${project.name}`);
+        item.querySelector(".save-project-name-button").setAttribute("aria-label", `Save name for ${project.name}`);
+        item.querySelector(".cancel-project-rename-button").setAttribute("aria-label", `Cancel renaming ${project.name}`);
+        item.querySelector(".project-rename-form").addEventListener("submit", (event) => {
+          event.preventDefault();
+          renameProject(project, state.editingProjectName);
+        });
+        item.querySelector(".cancel-project-rename-button").addEventListener("click", cancelProjectRename);
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            cancelProjectRename();
+          }
+        });
+      } else {
+        item.innerHTML = `
+          <button class="project-select-button" type="button"><strong></strong><span class="meta-line"></span></button>
+          <div class="project-action-rail" role="group">
+            <button class="project-action-button rename-project-button" type="button" title="Rename project">
+              <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                <path d="M4 20h4l11-11-4-4L4 16v4Z"></path>
+                <path d="m13.5 6.5 4 4"></path>
+              </svg>
+            </button>
+            <button class="project-action-button delete-project-button" type="button" title="Delete project">
+              <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                <path d="M4 7h16"></path>
+                <path d="M9 7V4h6v3"></path>
+                <path d="m7 7 1 13h8l1-13"></path>
+                <path d="M10 11v5M14 11v5"></path>
+              </svg>
+            </button>
+          </div>`;
+        item.querySelector("strong").textContent = project.name;
+        item.querySelector(".meta-line").textContent = `Updated ${formatDate(project.updatedAt)}`;
+        item.querySelector(".project-action-rail").setAttribute("aria-label", `Actions for ${project.name}`);
+        item.querySelector(".rename-project-button").setAttribute("aria-label", `Rename ${project.name}`);
+        item.querySelector(".delete-project-button").setAttribute("aria-label", `Delete ${project.name}`);
+        item.querySelector(".project-select-button").addEventListener("click", () => selectProject(project.id));
+        item.querySelector(".rename-project-button").addEventListener("click", () => startProjectRename(project));
+        item.querySelector(".delete-project-button").addEventListener("click", () => startProjectDelete(project));
+      }
+      elements.projectList.append(item);
     }
   }
 
@@ -570,7 +675,6 @@
     elements.searchInput.disabled = !hasProject;
     elements.addNoteButton.disabled = !hasProject;
     elements.recenterButton.disabled = !hasProject;
-    elements.deleteProjectButton.disabled = !hasProject;
     elements.zoomInButton.disabled = !hasProject;
     elements.zoomOutButton.disabled = !hasProject;
     elements.searchInput.value = state.searchQuery;
@@ -762,6 +866,9 @@
     state.selectedNoteIds = preservedSelection;
     syncSelectedNotes();
     state.hoveredNoteId = null;
+    state.editingProjectId = null;
+    state.editingProjectName = "";
+    state.confirmingProjectDeleteId = null;
     state.viewport = state.settings.canvasViewportByProject[projectId] || defaultViewport();
     state.settings.activeProjectId = projectId;
     await persistSettings();
@@ -780,29 +887,72 @@
     await selectProject(created.value.id);
   }
 
-  async function deleteActiveProject() {
-    if (!state.activeProject) {
-      return;
-    }
-    const confirmed = confirm(`Delete project "${state.activeProject.name}" and all of its notes?`);
-    if (!confirmed) {
-      return;
-    }
-
+  function startProjectRename(project) {
     clearError();
-    const projectId = state.activeProject.id;
+    state.editingProjectId = project.id;
+    state.editingProjectName = project.name;
+    state.confirmingProjectDeleteId = null;
+    renderProjects();
+    const input = elements.projectList.querySelector(".project-rename-input");
+    input.focus();
+    input.select();
+  }
+
+  function cancelProjectRename() {
+    state.editingProjectId = null;
+    state.editingProjectName = "";
+    clearError();
+    renderProjects();
+  }
+
+  function startProjectDelete(project) {
+    clearError();
+    state.confirmingProjectDeleteId = project.id;
+    state.editingProjectId = null;
+    state.editingProjectName = "";
+    renderProjects();
+  }
+
+  function cancelProjectDelete() {
+    state.confirmingProjectDeleteId = null;
+    clearError();
+    renderProjects();
+  }
+
+  async function renameProject(project, name) {
+    clearError();
+    const renamed = await projectService.renameProject(project.id, name);
+    if (!renamed.ok) {
+      setError(renamed.error);
+      return;
+    }
+    if (state.activeProject && state.activeProject.id === project.id) {
+      state.activeProject = renamed.value;
+    }
+    state.editingProjectId = null;
+    state.editingProjectName = "";
+    await refreshProjects();
+    render();
+  }
+
+  async function deleteProject(project) {
+    clearError();
+    const projectId = project.id;
     const deleted = await projectService.deleteProject(projectId);
     if (!deleted.ok) {
       setError(deleted.error);
       return;
     }
     delete state.settings.canvasViewportByProject[projectId];
-    state.settings.activeProjectId = null;
-    state.activeProject = null;
-    state.activeNotes = [];
-    state.searchQuery = "";
-    state.selectedNoteIds.clear();
-    state.viewport = defaultViewport();
+    if (state.activeProject && state.activeProject.id === projectId) {
+      state.settings.activeProjectId = null;
+      state.activeProject = null;
+      state.activeNotes = [];
+      state.searchQuery = "";
+      state.selectedNoteIds.clear();
+      state.viewport = defaultViewport();
+    }
+    state.confirmingProjectDeleteId = null;
     await persistSettings();
     await refreshProjects();
     render();
@@ -1514,7 +1664,6 @@
 
     document.addEventListener("keydown", handleKeyboardShortcut);
     elements.addNoteButton.addEventListener("click", createNoteAtCenter);
-    elements.deleteProjectButton.addEventListener("click", deleteActiveProject);
     elements.fullscreenButton.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       event.stopPropagation();

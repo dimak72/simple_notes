@@ -8,7 +8,7 @@ Simple Notes is implemented as a static browser app served from `index.html` wit
 
 Implemented v1 capabilities:
 
-- Create, select, and delete local note projects.
+- Create, select, rename, and delete local note projects.
 - Persist project name, creation time, update time, and the last active project.
 - Create, edit, move, select, and delete notes inside the active project.
 - Enforce a 1,024-character maximum note length and reject empty or whitespace-only note text.
@@ -38,6 +38,7 @@ Users need a web-based note taking application where they can organize text note
 - Provide a default web page that loads the note taking application.
 - Let users select a note project from previously saved note projects.
 - Let users create a new note project.
+- Let users rename or delete any saved note project from its sidebar actions.
 - Let users create and manage text-based notes inside a selected project.
 - Enforce a maximum size for each note.
 - Display notes in a project on an infinite-scroll-style canvas.
@@ -65,6 +66,7 @@ The primary user is an individual note taker who wants to capture short text not
 - User opens the default web page in a browser.
 - User selects an existing note project from a list of locally saved projects.
 - User enters a name or other identifying information for a new note project.
+- User renames or deletes a project from the actions contained in its sidebar card.
 - User enters note text, ranging from a single word to several sentences, subject to a maximum note size.
 - User enters optional comma-separated note tags.
 - User chooses a note color from the configured palette.
@@ -102,6 +104,7 @@ The primary user is an individual note taker who wants to capture short text not
 
 - No note projects exist yet.
 - A user creates a note project without a valid project name.
+- A user renames a project without a valid project name.
 - A user opens a project with zero notes.
 - A user creates an empty note or whitespace-only note.
 - A user enters note text at or above the maximum note size.

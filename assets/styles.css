@@ -158,12 +158,15 @@ button:focus-visible {
 }
 
 .project-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
   width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  padding: 0.85rem;
+  padding: 0.3rem;
   color: var(--ink);
-  text-align: left;
   background: rgba(255, 255, 255, 0.5);
 }
 
@@ -172,11 +175,89 @@ button:focus-visible {
   background: #fff2d8;
 }
 
-.project-item strong {
+.project-select-button {
+  min-width: 0;
+  padding: 0.55rem;
+  color: var(--ink);
+  text-align: left;
+  background: transparent;
+}
+
+.project-select-button strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.project-rename-form {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.project-rename-input {
+  min-width: 0;
+  width: 100%;
+  padding: 0.55rem;
+}
+
+.project-delete-confirmation {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding-left: 0.55rem;
+  color: var(--danger);
+}
+
+.project-delete-confirmation strong {
+  display: block;
+}
+
+.confirm-project-delete-button {
+  color: var(--danger);
+}
+
+.project-action-rail {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.project-action-button {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  padding: 0.42rem;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+}
+
+.project-action-button:hover:not(:disabled) {
+  color: var(--ink);
+  background: rgba(43, 39, 33, 0.08);
+}
+
+.project-action-button.delete-project-button {
+  color: var(--danger);
+}
+
+.project-action-button svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .workspace {
@@ -214,10 +295,6 @@ button:focus-visible {
 
 .search-input {
   width: min(22rem, 34vw);
-}
-
-.danger-button {
-  background: var(--danger);
 }
 
 .status-banner {
